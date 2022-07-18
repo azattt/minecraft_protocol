@@ -2,6 +2,7 @@ import argparse
 import socket
 import threading
 import zlib
+import json
 from nbt import parse_slot_data
 
 from protocol_types import (String, UShort, VarInt, read_Boolean, read_Byte,
@@ -10,6 +11,18 @@ from protocol_types import (String, UShort, VarInt, read_Boolean, read_Byte,
                             read_UByte, read_UUID, read_VarInt)
 
 LOG_TIME_UPDATES = 0
+
+STATE_LOGIN = 0
+STATE_PLAY = 1
+
+data_buf = b""
+g_state = STATE_LOGIN
+compression_enabled = False
+packets = []
+packets_1 = []
+packets_2 = []
+
+info = {}
 
 
 def handle_plugin_message(data: bytes) -> int:
@@ -21,13 +34,9 @@ def handle_plugin_message(data: bytes) -> int:
     return 0
 
 
-data_buf = b""
-g_state = 0
-
-
 #pylint: disable=missing-function-docstring, global-statement
 def process_data():
-    global data_buf, g_state
+    global data_buf, g_state, compression_enabled
     while True:
         packet_length = 0
         if not packet_length:
@@ -41,28 +50,38 @@ def process_data():
         if len(data_buf) - packet_length[1] < packet_length[0]:
             continue
 
-        packet = data_buf[:packet_length[0] + packet_length[1]]
-        packets_1.append(packet)
-
         # packet is in buffer and ready to be read
-        packet_pointer = packet_length[1]
-        packet_compressed_size, packet_pointer = read_VarInt(
-            packet, packet_pointer)
-        if packet_compressed_size:
-            packet_data = zlib.decompress(packet[packet_pointer:])
+        packet_raw = data_buf[:packet_length[0] + packet_length[1]]
+        packets_1.append(packet_raw)
+        packet_raw_pointer = packet_length[1]
+
+        if compression_enabled:
+            packet_compressed_size, packet_raw_pointer = read_VarInt(
+                packet_raw, packet_raw_pointer)
+            if packet_compressed_size:
+                packet = zlib.decompress(packet_raw[packet_raw_pointer:])
+            else:
+                packet = packet_raw[packet_raw_pointer:]
         else:
-            packet_data = packet[packet_pointer:]
+            packet = packet_raw[packet_raw_pointer:]
 
-        packet_id, packet_pointer = read_VarInt(packet, packet_pointer)
-        packets_2.append([hex(packet_id), packet_data])
+        packet_id, packet_pointer = read_VarInt(packet)
+        packets_2.append([hex(packet_id), packet])
 
-        if g_state == STATE_NONE:
-            if packet_id == 0x02:
+        if g_state == STATE_LOGIN:
+            if packet_id == 0x00:
+                print("0x00 (Login disconnect)")
+                reason, packet_pointer = read_Chat(packet, packet_pointer)
+                print(json.loads(reason))
+            elif packet_id == 0x02:
                 g_state = STATE_PLAY
                 info["uuid"], packet_pointer = read_String(
                     packet, packet_pointer)
                 info["username"], packet_pointer = read_String(
                     packet, packet_pointer)
+            elif packet_id == 0x03:
+                compression_enabled = True
+
         elif g_state == STATE_PLAY:
             if packet_id == 0x01:
                 info["entity_id"], packet_pointer = read_Int(
@@ -104,9 +123,14 @@ def process_data():
                     packet, packet_pointer)
             elif packet_id == 0x37:
                 # Statistics
-                # TODO: i dont know what to with this :(
+                print("0x37 (Statistics)")
                 count, packet_pointer = read_VarInt(packet, packet_pointer)
-                print("0x37 (Statistics)", count)
+                statistics = {}
+                for i in range(count):
+                    name, packet_pointer = read_String(packet, packet_pointer)
+                    value, packet_pointer = read_VarInt(packet, packet_pointer)
+                    statistics[name] = value
+                print(statistics)
             elif packet_id == 0x02:
                 # Chat Message
                 chat, packet_pointer = read_Chat(packet, packet_pointer)
@@ -258,7 +282,6 @@ def process_data():
                             packet, packet_pointer)
                         item_damage, packet_pointer = read_Short(
                             packet, packet_pointer)
-                        print(1)
                         nbt_byte, packet_pointer = read_Byte(
                             packet, packet_pointer)
                         if nbt_byte:
@@ -271,10 +294,11 @@ def process_data():
                 print("0x40 (Disconnect)")
                 reason, packet_pointer = read_Chat(packet, packet_pointer)
                 print(reason)
-            # else:
-            #     raise RuntimeError("Ran into not implemented packet: " +
-            #                        hex(packet_id))
+            else:
+                raise RuntimeError("Ran into not implemented packet: " +
+                                   hex(packet_id))
 
+        print("clear")
         # clear data buffer and go on
         data_buf = data_buf[packet_length[0] + packet_length[1]:]
 
@@ -289,7 +313,6 @@ data = VarInt(0x00) + VarInt(47) + String("localhost") + UShort(
     "25565") + VarInt(2)
 packet = VarInt(len(data)) + data
 s.send(packet)
-
 if args.nickname:
     data = VarInt(0x00) + String(args.nickname)
 else:
@@ -297,20 +320,6 @@ else:
 
 packet = VarInt(len(data)) + data
 s.send(packet)
-data_buf = b''
-# getting logined
-a = s.recv(1024)
-packets = []
-packets.append(a)
-packets_1 = []
-packets_1.append(a)
-packets_2 = []
-
-info = {}
-
-STATE_NONE = 0
-STATE_PLAY = 1
-g_state = 0
 
 process_data_thread = threading.Thread(target=process_data, daemon=True)
 process_data_thread.start()

@@ -216,7 +216,7 @@ def read_String(value: bytes, pointer: int = 0) -> tuple[str, int]:
     returns string and pointer.
     """
     length, pointer = read_VarInt(value, pointer)
-    return (value[pointer:length + pointer].decode("utf8",
+    return (value[pointer:pointer+length].decode("utf8",
                                                    "big"), pointer + length)
 
 
@@ -225,7 +225,7 @@ def read_Chat(value: bytes, pointer: int = 0) -> tuple[str, int]:
     returns JSON string of chat and pointer.
     """
     length, pointer = read_VarInt(value, pointer)
-    return (value[pointer:length + pointer].decode("utf8",
+    return (value[pointer:pointer + length].decode("utf8",
                                                    "big"), pointer + length)
 
 
