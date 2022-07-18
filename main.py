@@ -3,7 +3,7 @@ import socket
 import threading
 import zlib
 import json
-from nbt import parse_slot_data
+from nbt import parse_NBT_stream
 
 from protocol_types import (String, UShort, VarInt, read_Boolean, read_Byte,
                             read_Chat, read_Double, read_Float, read_Int,
@@ -285,8 +285,9 @@ def process_data():
                         nbt_byte, packet_pointer = read_Byte(
                             packet, packet_pointer)
                         if nbt_byte:
-                            item_nbt, packet_pointer = parse_slot_data(
+                            item_nbt, packet_pointer = parse_NBT_stream(
                                 packet, packet_pointer - 1)
+
                         break
                 print(window_id, count, items, len(items))
             elif packet_id == 0x40:
