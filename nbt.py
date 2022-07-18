@@ -87,7 +87,7 @@ def parse_NBT_stream(data: bytes, pointer: int = 0) -> tuple[dict, int]:
             ]
             pointer0 += string_length
         elif tag_type == TAG_LIST:
-            list_tag_id = (data0[0] ^ 0x80) - 0x80
+            list_tag_id = (data0[pointer0] ^ 0x80) - 0x80
             list_size = int.from_bytes(data0[pointer0 + 1:pointer0 + 5],
                                        "big",
                                        signed=True)
@@ -113,22 +113,8 @@ def parse_NBT_stream(data: bytes, pointer: int = 0) -> tuple[dict, int]:
             "children": children
         }, pointer0)
 
-    length = 0
-    if data[0] != TAG_COMPOUND:
+    if data[pointer] != TAG_COMPOUND:
         raise RuntimeError(
             "Could not pass NBT: given NBT doesn't start with Compound tag")
 
     return parse_tag(data, pointer)
-
-
-def test():
-    """testing parser"""
-    import gzip
-    with open("bigtest.nbt", "rb") as file:
-        data = gzip.decompress(file.read())
-        parsed, length = parse_NBT_stream(data)
-        print(parsed, length, len(data))
-
-
-if __name__ == "__main__":
-    test()

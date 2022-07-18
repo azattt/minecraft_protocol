@@ -287,8 +287,7 @@ def process_data():
                         if nbt_byte:
                             item_nbt, packet_pointer = parse_NBT_stream(
                                 packet, packet_pointer - 1)
-
-                        break
+                            print(item_nbt)
                 print(window_id, count, items, len(items))
             elif packet_id == 0x40:
                 # Disconnect
