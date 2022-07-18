@@ -258,6 +258,7 @@ def process_data():
                             packet, packet_pointer)
                         item_damage, packet_pointer = read_Short(
                             packet, packet_pointer)
+                        print(1)
                         nbt_byte, packet_pointer = read_Byte(
                             packet, packet_pointer)
                         if nbt_byte:
