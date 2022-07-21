@@ -5,10 +5,10 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Python: NBT parser",
+      "name": "Python: Current File",
       "type": "python",
       "request": "launch",
-      "program": "${workspaceFolder}/nbt.py",
+      "program": "${file}",
       "console": "integratedTerminal",
       "justMyCode": true
     },
@@ -19,7 +19,7 @@
       "program": "${workspaceFolder}/main.py",
       "console": "integratedTerminal",
       "justMyCode": true,
-      "args": ["--nickname=CoolSeymur"]
+      "args": ["--nickname=s3"]
     }
   ]
 }
