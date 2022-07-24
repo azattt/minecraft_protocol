@@ -522,3 +522,10 @@ def read_Particle(value: bytes, pointer: int = 0) -> tuple[dict, int]:
         data["entity_eye_height"], pointer = read_Float(value, pointer)
         data["ticks"], pointer = read_VarInt(value, pointer)
     return (data, pointer)
+
+
+def read_Chunk(data: bytes, pointer: int = 0):
+    """
+    returns dict with chunk data and a pointer
+    """
+    return (None, pointer)

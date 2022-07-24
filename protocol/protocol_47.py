@@ -5,9 +5,11 @@ from typing import Callable
 import zlib
 from protocol.protocol_types import (
     String, UShort, VarInt, parse_NBT_stream, parse_entity_metadata,
-    read_Angle, read_Boolean, read_Byte, read_Chat, read_Double, read_Float,
-    read_Int, read_Long, read_Position, read_Short, read_Slot, read_String,
-    read_UByte, read_UUID, read_VarInt)
+    read_Angle, read_Boolean, read_Byte, read_Chat, read_Chunk, read_Double,
+    read_Float, read_Int, read_Long, read_Position, read_Short, read_Slot,
+    read_String, read_UByte, read_UShort, read_UUID, read_VarInt)
+
+print_1 = print
 
 
 def print(*args, **kwargs):
@@ -28,6 +30,12 @@ ENTER_COMBAT = 0
 END_COMBAT = 1
 ENTITY_DEAD = 2
 LOG_TIME_UPDATES = 0
+MAP_CHUNK_DATA = 0
+MAP_MULTI_BLOCK_CHANGE = 1
+MAP_BLOCK_CHANGE = 2
+MAP_BLOCK_ACTION = 3
+MAP_BLOCK_BREAK_ANIMATION = 4
+MAP_CHUNK_BULK = 5
 
 
 class ProtocolClient:
@@ -49,6 +57,8 @@ class ProtocolClient:
         self.map_handler: Callable = None
         self.chat_handler: Callable = None
         self.state_handler: Callable = None
+
+        self.chunk_data = {}
 
     def create_connection(self, address: tuple[str, int]) -> int:
         """create connection"""
@@ -111,6 +121,7 @@ class ProtocolClient:
             self.state_handler(*args, **kwargs)
 
     #pylint: enable=not-callable
+
     def _receive_data(self):
         """starts infinite socket receiver loop"""
         while True:
@@ -169,7 +180,16 @@ class ProtocolClient:
                     self.compression_enabled = True
 
             elif self.state == STATE_PLAY:
-                if packet_id == 0x01:
+                # if (2, 3) in self.chunk_data:
+                #     print_1(self.chunk_data[(2, 3)])
+                if packet_id == 0x00:
+                    print("0x00 (Keep Alive)", packet, packet_raw)
+                    keep_alive_id, packet_pointer = read_VarInt(
+                        packet, packet_pointer)
+                    print(keep_alive_id)
+                    self.socket.send(packet_raw)
+
+                elif packet_id == 0x01:
                     self.info["entity_id"], packet_pointer = read_Int(
                         packet, packet_pointer)
                     self.info["gamemode"], packet_pointer = read_UByte(
@@ -185,6 +205,15 @@ class ProtocolClient:
                     self.info[
                         "reduced_debug_info"], packet_pointer = read_Boolean(
                             packet, packet_pointer)
+                elif packet_id == 0x02:
+                    # Chat Message
+                    chat, packet_pointer = read_Chat(packet, packet_pointer)
+                    chat_position, packet_pointer = read_Byte(
+                        packet, packet_pointer)
+                    self.call_chat_handler({
+                        "chat": chat,
+                        "chat_position": chat_position
+                    })
                 elif packet_id == 0x3f:
                     # Plugin Message
                     self.handle_plugin_message(packet[packet_pointer:])
@@ -222,15 +251,6 @@ class ProtocolClient:
                             packet, packet_pointer)
                         statistics[name] = value
                     print(statistics)
-                elif packet_id == 0x02:
-                    # Chat Message
-                    chat, packet_pointer = read_Chat(packet, packet_pointer)
-                    chat_position, packet_pointer = read_Byte(
-                        packet, packet_pointer)
-                    self.call_chat_handler({
-                        "chat": chat,
-                        "chat_position": chat_position
-                    })
                 elif packet_id == 0x38:
                     # Player List Item
                     print("0x38 (Player List Item)")
@@ -390,8 +410,6 @@ class ProtocolClient:
                     slot_data, packet_pointer = read_Slot(
                         packet, packet_pointer)
                     print(window_id, slot, slot_data)
-                elif packet_id == 0x26:
-                    print("0x26 (Map chunk bulk, not implemented)")
                 elif packet_id == 0x35:
                     print("0x35 (Update Block Entity)")
                     x, y, z, packet_pointer = read_Position(
@@ -433,15 +451,141 @@ class ProtocolClient:
                     )
                 elif packet_id == 0x1a:
                     print("0x1a (Entity Status, not implemented)")
-                elif packet_id == 0x00:
-                    print("0x00 (Keep Alive)", packet, packet_raw)
-                    keep_alive_id, packet_pointer = read_VarInt(
-                        packet, packet_pointer)
-                    print(keep_alive_id)
-                    self.socket.send(packet_raw)
-
                 elif packet_id == 0x21:
-                    print("0x21 (Chunk Data, not implemented)")
+                    chunk_x, packet_pointer = read_Int(packet, packet_pointer)
+                    chunk_z, packet_pointer = read_Int(packet, packet_pointer)
+                    ground_up_continuous, packet_pointer = read_Boolean(
+                        packet, packet_pointer)
+                    primary_bit_mask, packet_pointer = read_UShort(
+                        packet, packet_pointer)
+                    size, packet_pointer = read_VarInt(packet, packet_pointer)
+                    chunk, packet_pointer = read_Chunk(packet, packet_pointer)
+                    self.call_map_handler({
+                        "type": MAP_CHUNK_DATA,
+                        "chunk_x": chunk_x,
+                        "chunk_z": chunk_z,
+                        "ground_up_continuous": ground_up_continuous,
+                        "size": size,
+                        "chunk": chunk
+                    })
+                elif packet_id == 0x22:
+                    chunk_x, packet_pointer = read_Int(packet, packet_pointer)
+                    chunk_z, packet_pointer = read_Int(packet, packet_pointer)
+                    record_count, packet_pointer = read_VarInt(
+                        packet, packet_pointer)
+                    records = []
+                    for i in range(record_count):
+                        horizontal_position, packet_pointer = read_UByte(
+                            packet, packet_pointer)
+                        x = horizontal_position & 0xf0
+                        z = horizontal_position & 0x0f
+                        y, packet_pointer = read_UByte(packet, packet_pointer)
+                        block_id, packet_pointer = read_VarInt(
+                            packet, packet_pointer)
+                        records.append({
+                            "position": (x, y, z),
+                            "block_id": block_id
+                        })
+                    self.call_map_handler({
+                        "type": MAP_MULTI_BLOCK_CHANGE,
+                        "chunk_x": chunk_x,
+                        "chunk_z": chunk_z,
+                        "records": records
+                    })
+                elif packet_id == 0x23:
+                    x, y, z, packet_pointer = read_Position(
+                        packet, packet_pointer)
+                    block_id, packet_pointer = read_VarInt(
+                        packet, packet_pointer)
+                    self.call_map_handler({
+                        "type": MAP_BLOCK_CHANGE,
+                        "location": (x, y, z),
+                        "block_id": block_id
+                    })
+                elif packet_id == 0x24:
+                    x, y, z, packet_pointer = read_Position(
+                        packet, packet_pointer)
+                    byte_1, packet_pointer = read_UByte(packet, packet_pointer)
+                    byte_2, packet_pointer = read_UByte(packet, packet_pointer)
+                    block_type, packet_pointer = read_VarInt(
+                        packet, packet_pointer)
+                    self.call_map_handler({
+                        "type": MAP_BLOCK_ACTION,
+                        "location": (x, y, z),
+                        "byte_1": byte_1,
+                        "byte_2": byte_2,
+                        "block_type": block_type
+                    })
+                elif packet_id == 0x25:
+                    entity_id, packet_pointer = read_VarInt(
+                        packet, packet_pointer)
+                    x, y, z, packet_pointer = read_Position(
+                        packet, packet_pointer)
+                    destroy_stage, packet_pointer = read_Byte(
+                        packet, packet_pointer)
+                    self.call_map_handler({
+                        "type": MAP_BLOCK_BREAK_ANIMATION,
+                        "entity_id": entity_id,
+                        "location": (x, y, z),
+                        "destroy_stage": destroy_stage
+                    })
+                elif packet_id == 0x26:
+                    # bulk
+                    sky_light_send, packet_pointer = read_Boolean(
+                        packet, packet_pointer)
+                    chunk_column_count, packet_pointer = read_VarInt(
+                        packet, packet_pointer)
+                    chunk_meta = []
+                    for i in range(chunk_column_count):
+                        chunk_x, packet_pointer = read_Int(
+                            packet, packet_pointer)
+                        chunk_z, packet_pointer = read_Int(
+                            packet, packet_pointer)
+                        primary_bit_mask, packet_pointer = read_UShort(
+                            packet, packet_pointer)
+                        chunk_meta.append({
+                            "chunk_x": chunk_x,
+                            "chunk_z": chunk_z,
+                            "primary_bit_mask": primary_bit_mask
+                        })
+                    for i in chunk_meta:
+                        primary_bit_mask = i["primary_bit_mask"]
+                        chunk_biome = [0] * 256
+                        chunk_column_blocks = []
+                        while primary_bit_mask > 0:
+                            chunk_blocks = [0] * 4096
+                            for j in range(4096):
+                                block = int.from_bytes(
+                                    packet[packet_pointer +
+                                           j * 2:packet_pointer + j * 2 + 2],
+                                    "little")
+                                block_id = block >> 4
+                                block_meta = block & 15
+                                chunk_blocks[j] = {
+                                    "block_id": block_id,
+                                    "block_meta": block_meta
+                                }
+                            packet_pointer += 8192
+                            for j in range(2048):
+                                chunk_blocks[j * 2]["block_light"] = packet[
+                                    packet_pointer + j] & 15
+                                chunk_blocks[j * 2 +
+                                             1]["block_light"] = packet[
+                                                 packet_pointer + j] >> 4
+
+                            packet_pointer += 2048
+                            for j in range(2048):
+                                chunk_blocks[j * 2]["sky_light"] = packet[
+                                    packet_pointer + j] & 15
+                                chunk_blocks[j * 2 + 1]["sky_light"] = packet[
+                                    packet_pointer + j] >> 4
+                            packet_pointer += 2048
+                            chunk_column_blocks += chunk_blocks
+                            primary_bit_mask >>= 1
+                        for j in range(256):
+                            chunk_biome[j] = packet[packet_pointer + j]
+                        packet_pointer += 256
+
                 elif packet_id == 0x16:
                     print("0x16 (Entity Look, not implemented)")
                 elif packet_id == 0x29:
@@ -480,13 +624,6 @@ class ProtocolClient:
                             packet, packet_pointer)
                         entity_ids.append(tmp)
                     print(entity_ids)
-                elif packet_id == 0x23:
-                    print("0x23 (Block Change)")
-                    x, y, z, packet_pointer = read_Position(
-                        packet, packet_pointer)
-                    block_id, packet_pointer = read_VarInt(
-                        packet, packet_pointer)
-                    print(x, y, z, block_id)
                 elif packet_id == 0x0c:
                     print("0x0c (Spawn Player)")
                     entity_id, packet_pointer = read_VarInt(
@@ -541,8 +678,6 @@ class ProtocolClient:
                         message, packet_pointer = read_String(
                             packet, packet_pointer)
                     print(event, duration, player_id, entity_id, message)
-                elif packet_id == 0x22:
-                    print("0x22 (Multi Block Change, not implemented)")
                 elif packet_id == 0x2e:
                     print("0x2e (Close Window, not implemented)")
                 elif packet_id == 0x27:
