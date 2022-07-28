@@ -1,4 +1,6 @@
 server/
 __pycache__/
+profiles/
 access_token.txt
 py_joy.py
+python_test.py

@@ -303,17 +303,20 @@ def VarLong(value: int) -> bytes:
 
 def String(string: str) -> bytes:
     """Minecraft's String type"""
-    return VarInt(len(string)) + bytes(string, "utf8")
+    utf8_byte = bytes(string, "utf8")
+    return VarInt(len(utf8_byte)) + utf8_byte
 
 
 def Chat(string: str) -> bytes:
     """Minecraft's Chat type"""
-    return VarInt(len(string)) + bytes(string, "utf8")
+    utf8_byte = bytes(string, "utf8")
+    return VarInt(len(utf8_byte)) + utf8_byte
 
 
 def Identifier(string: str) -> bytes:
     """Minecraft's Identifier type"""
-    return VarInt(len(string)) + bytes(string, "utf8")
+    utf8_byte = bytes(string, "utf8")
+    return VarInt(len(utf8_byte)) + utf8_byte
 
 
 def UUID(my_uuid: uuid.UUID) -> bytes:
@@ -522,10 +525,3 @@ def read_Particle(value: bytes, pointer: int = 0) -> tuple[dict, int]:
         data["entity_eye_height"], pointer = read_Float(value, pointer)
         data["ticks"], pointer = read_VarInt(value, pointer)
     return (data, pointer)
-
-
-def read_Chunk(data: bytes, pointer: int = 0):
-    """
-    returns dict with chunk data and a pointer
-    """
-    return (None, pointer)
